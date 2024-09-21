@@ -5,6 +5,9 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+
+String url = "https://fakestoreapi.com/products"; // URL utilizada para la conexion http
 
 // Configuración de la red Wi-Fi
 const char *ssid = "";
@@ -23,6 +26,7 @@ WiFiClient wifiClient;
 
 // Objeto PubSubClient
 PubSubClient mqttClient(wifiClient);
+HTTPClient http;
 
 MPU6050 mpu1;                              // Primer sensor MPU6050
 MPU6050 mpu2;                              // Segundo sensor MPU6050
@@ -102,6 +106,37 @@ void collectSensorData(MPU6050 &mpu, StaticJsonDocument<4096> &doc, int &measure
   Serial.println(key);
 }
 
+void sendJsonAsPostRequest(const char *filename)
+{
+  File file = SPIFFS.open(filename, FILE_READ);
+  if (!file)
+  {
+    Serial.println("Error al abrir el archivo para leer");
+    return;
+  }
+
+  String jsonContent = file.readString();
+  file.close();
+
+  // Preparar y enviar la solicitud POST
+  http.begin(url.c_str());
+  http.addHeader("Content-Type", "application/json");
+  int httpResponseCode = http.POST(jsonContent.c_str());
+
+  if (httpResponseCode > 0)
+  {
+    Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+    String payload = http.getString();
+    Serial.println(payload);
+  }
+  else
+  {
+    Serial.printf("Error code: %d\n", httpResponseCode);
+  }
+
+  http.end();
+}
+
 // Will start a 5 second test for both sensonrs
 void doTest(int testDurationMs, int samplesPerSecond)
 {
@@ -134,9 +169,18 @@ void doTest(int testDurationMs, int samplesPerSecond)
   saveJson("/sensor2_data.json", measurementsDoc2);
   showJson("/sensor1_data.json");
   showJson("/sensor2_data.json");
+
+  // Enviar datos de ambos sensores como solicitudes POST separadas
+  Serial.println("Enviando datos del Sensor 1...");
+  sendJsonAsPostRequest("/sensor1_data.json");
+
+  Serial.println("Enviando datos del Sensor 2...");
+  sendJsonAsPostRequest("/sensor2_data.json");
+
+  Serial.println("Envío de datos completado.");
 }
 
-void handleMqttMessage(const String &message)
+void handleMqttMessage(const String message)
 {
   // Convertir el mensaje a minúsculas para una comparación insensible a mayúsculas/minúsculas
   String lowerMessage = message;
@@ -196,6 +240,8 @@ void keepAlive()
     mqttClient.subscribe(topic);
   }
 }
+
+
 
 void setup()
 {
