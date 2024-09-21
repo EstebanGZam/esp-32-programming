@@ -3,6 +3,26 @@
 #include <Wire.h>
 #include <MPU6050.h>
 #include <ArduinoJson.h>
+#include <PubSubClient.h>
+#include <WiFi.h>
+
+// Configuración de la red Wi-Fi
+const char *ssid = "";
+const char *password = "";
+
+// Configuración del servidor MQTT
+const char *mqttServer = "broker.hivemq.com";
+const int mqttPort = 1883;
+const char *clientName = "ESP32ClienteIcesiA00381213";
+
+// Configuración del topic
+const char *topic = "test/icesi/dlp";
+
+// Objeto WiFiClient
+WiFiClient wifiClient;
+
+// Objeto PubSubClient
+PubSubClient mqttClient(wifiClient);
 
 MPU6050 mpu1;                              // Primer sensor MPU6050
 MPU6050 mpu2;                              // Segundo sensor MPU6050
@@ -86,7 +106,7 @@ void collectSensorData(MPU6050 &mpu, StaticJsonDocument<4096> &doc, int &measure
 void doTest(int testDurationMs, int samplesPerSecond)
 {
   Serial.println("Iniciando toma de datos...");
-  
+
   int totalSamples = (testDurationMs * samplesPerSecond) / 1000;
   int delayBetweenSamples = 1000 / samplesPerSecond;
 
@@ -114,6 +134,67 @@ void doTest(int testDurationMs, int samplesPerSecond)
   saveJson("/sensor2_data.json", measurementsDoc2);
   showJson("/sensor1_data.json");
   showJson("/sensor2_data.json");
+}
+
+void handleMqttMessage(const String &message)
+{
+  // Convertir el mensaje a minúsculas para una comparación insensible a mayúsculas/minúsculas
+  String lowerMessage = message;
+  lowerMessage.toLowerCase();
+
+  if (lowerMessage == "init")
+  {
+    Serial.println("Comando 'init' recibido. Iniciando test...");
+    // Llamar a doTest con los parámetros deseados (por ejemplo, 5 segundos a 20 Hz)
+    doTest(5000, 20);
+  }
+  else
+  {
+    Serial.println("Comando no reconocido: " + message);
+  }
+}
+
+void callback(char *topic, byte *payload, unsigned int length)
+{
+  // Crear un String con el payload recibido
+  String message;
+  for (unsigned int i = 0; i < length; i++)
+  {
+    message += (char)payload[i];
+  }
+
+  // Imprimir el mensaje recibido
+  Serial.print("Mensaje recibido en el topic ");
+  Serial.print(topic);
+  Serial.print(": ");
+  Serial.println(message);
+
+  // Llamar a handleMqttMessage con el mensaje recibido
+  handleMqttMessage(message);
+}
+
+void keepAlive()
+{
+  if (!mqttClient.connected())
+  {
+    Serial.println("Reconectando");
+    // Intenta conectarse al servidor MQTT
+    while (!mqttClient.connected())
+    {
+      Serial.println("Intentando conectar al servidor MQTT...");
+      if (mqttClient.connect(clientName))
+      {
+        Serial.println("Conectado al servidor MQTT!");
+      }
+      else
+      {
+        Serial.print("Error al conectar: ");
+        Serial.println(mqttClient.state());
+        delay(5000);
+      }
+    }
+    mqttClient.subscribe(topic);
+  }
 }
 
 void setup()
@@ -153,23 +234,49 @@ void setup()
     return;
   }
 
+  // Conecta a la red Wi-Fi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+
+  // Inicializa el cliente MQTT
+  mqttClient.setServer(mqttServer, mqttPort);
+  mqttClient.setCallback(callback);
+
+  // Intenta conectarse al servidor MQTT
+  while (!mqttClient.connected())
+  {
+    Serial.println("Intentando conectar al servidor MQTT...");
+    if (mqttClient.connect(clientName))
+    {
+      Serial.println("Conectado al servidor MQTT!");
+    }
+    else
+    {
+      Serial.print("Error al conectar: ");
+      Serial.println(mqttClient.state());
+      delay(5000);
+    }
+  }
+
+  // Suscríbete al topic
+  mqttClient.subscribe(topic);
+
   Serial.println("Escribe 'init' para comenzar con la prueba");
 }
 // Función para guardar el archivo JSON en SPIFFS
 
 void loop()
 {
+
+  mqttClient.loop();
+  keepAlive();
   // Leer entrada del monitor serial
-  if (Serial.available() > 0)
-  {
-    String input = Serial.readStringUntil('\n');
-    input.trim(); // Eliminar espacios en blanco y saltos de línea
+}
 
-    if (input.equals("init"))
-    {
-      doTest(5000,20); // Prueba que dura 5 segundos a 20 hertz. El primer argumento esta en milisegundos
-    }
-  }
-
-  // Si se debe recolectar datos
+void serialEvent()
+{
 }
