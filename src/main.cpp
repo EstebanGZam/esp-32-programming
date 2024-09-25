@@ -6,65 +6,80 @@
 #include <PubSubClient.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <TimeLib.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
 
-String url = "https://fakestoreapi.com/products"; // URL utilizada para la conexion http
+// URL used for http connection
+String url = "https://fakestoreapi.com/products";
 
-// Configuración de la red Wi-Fi
-const char *ssid = "";
+// WiFi network configuration
+// Set network name
+const char *ssid = "PUBLICA";
+// Set network password
 const char *password = "";
 
-// Configuración del servidor MQTT
+// MQTT server configuration
 const char *mqttServer = "broker.hivemq.com";
 const int mqttPort = 1883;
 const char *clientName = "ESP32ClienteIcesiA00381213";
 
-// Configuración del topic
+// Topic configuration
 const char *topic = "test/icesi/dlp";
 
-// Objeto WiFiClient
+// Time configuration
+WiFiUDP ntpUDP;
+
+// -18000 seconds for UTC-5
+NTPClient timeClient(ntpUDP, "pool.ntp.org", -18000, 60000);
+
+
+// Object WiFiClient
 WiFiClient wifiClient;
 
-// Objeto PubSubClient
+// Object PubSubClient
 PubSubClient mqttClient(wifiClient);
 HTTPClient http;
 
-MPU6050 mpu1;                              // Primer sensor MPU6050
-MPU6050 mpu2;                              // Segundo sensor MPU6050
-int measurementID1 = 0;                    // Contador para asignar claves únicas al sensor 1
-int measurementID2 = 0;                    // Contador para asignar claves únicas al sensor 2
-StaticJsonDocument<4096> measurementsDoc1; // Documento JSON para el sensor 1
-StaticJsonDocument<4096> measurementsDoc2; // Documento JSON para el sensor 2
+// First sensor MPU6050
+MPU6050 mpu1;      
+// Second sensor MPU6050    
+MPU6050 mpu2;
 
-void saveJson(const char *path, StaticJsonDocument<4096> &jsonDoc)
-{
-  // Crear o sobrescribir el archivo JSON en SPIFFS
+JsonDocument measurementsDoc;
+
+// Definition of metadata
+const char *evaluatedID = "1";
+String typeOfTest;
+String date;
+String timeOfTest;
+String location;
+
+void saveJson(const char *path, JsonDocument &jsonDoc){
+  // Create or overwrite JSON file in SPIFFS
   File file = SPIFFS.open(path, FILE_WRITE);
-  if (!file)
-  {
+  if (!file) {
     Serial.println("Error al abrir el archivo para escribir");
     return;
   }
 
-  // Escribir el objeto JSON (todas las mediciones) en el archivo
+  // Write the JSON object (all measurements) to file
   serializeJson(jsonDoc, file);
   file.close();
 }
 
-// Función para leer y mostrar el archivo JSON en el puerto serial
-void showJson(const char *path)
-{
-  // Abrir el archivo JSON en SPIFFS
+// Function to read and display the JSON file on the serial port
+void showJson(const char *path) {
+  // Open the JSON file in SPIFFS
   File file = SPIFFS.open(path, FILE_READ);
-  if (!file)
-  {
+  if (!file) {
     Serial.println("Error: No se pudo abrir el archivo para leer.");
     return;
   }
 
-  StaticJsonDocument<4096> jsonObjectDoc;
+  JsonDocument jsonObjectDoc;
   DeserializationError error = deserializeJson(jsonObjectDoc, file);
-  if (error)
-  {
+  if (error) {
     Serial.print("Error al parsear el archivo JSON: ");
     Serial.println(error.f_str());
     file.close();
@@ -72,45 +87,32 @@ void showJson(const char *path)
   }
 
   Serial.println("Contenido del archivo JSON:");
-  serializeJsonPretty(jsonObjectDoc, Serial); // Mostrar el JSON de manera legible
+  // Display the JSON in a readable form
+  serializeJsonPretty(jsonObjectDoc, Serial); 
   Serial.println();
   file.close();
 }
 
-// Función para recolectar datos de un sensor específico
-void collectSensorData(MPU6050 &mpu, StaticJsonDocument<4096> &doc, int &measurementID, const char *sensorName)
-{
-  // Leer datos del sensor MPU6050
+// Function to collect data from a specific sensor
+void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampleName) {
+  // Read sensor data MPU6050
   int16_t ax, ay, az;
   int16_t gx, gy, gz;
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, &gy, &gz);
 
-  // Crear un objeto JSON para la nueva medición
-  StaticJsonDocument<200> jsonDoc;
-  jsonDoc["ax"] = ax;
-  jsonDoc["ay"] = ay;
-  jsonDoc["az"] = az;
-  jsonDoc["gx"] = gx;
-  jsonDoc["gy"] = gy;
-  jsonDoc["gz"] = gz;
-
-  // Crear una clave única para cada medición
-  String key = "medicion_" + String(measurementID++);
-
-  // Añadir la nueva medición con su clave única al objeto JSON general
-  doc[key] = jsonDoc;
-
-  Serial.print(sensorName);
-  Serial.print(": Se ha añadido la medición ");
-  Serial.println(key);
+  JsonObject sample = measurementsDoc["datos"][sensorName].createNestedObject(sampleName);
+  sample["ax"] = ax;
+  sample["ay"] = ay;
+  sample["az"] = az;
+  sample["gx"] = gx;
+  sample["gy"] = gy;
+  sample["gz"] = gz;
 }
 
-void sendJsonAsPostRequest(const char *filename)
-{
+void sendJsonAsPostRequest(const char *filename) {
   File file = SPIFFS.open(filename, FILE_READ);
-  if (!file)
-  {
+  if (!file) {
     Serial.println("Error al abrir el archivo para leer");
     return;
   }
@@ -118,45 +120,73 @@ void sendJsonAsPostRequest(const char *filename)
   String jsonContent = file.readString();
   file.close();
 
-  // Preparar y enviar la solicitud POST
+  // Prepare and send the POST request
   http.begin(url.c_str());
   http.addHeader("Content-Type", "application/json");
   int httpResponseCode = http.POST(jsonContent.c_str());
 
-  if (httpResponseCode > 0)
-  {
+  if (httpResponseCode > 0) {
     Serial.printf("HTTP Response code: %d\n", httpResponseCode);
     String payload = http.getString();
     Serial.println(payload);
   }
-  else
-  {
+  else {
     Serial.printf("Error code: %d\n", httpResponseCode);
   }
 
   http.end();
 }
 
-// Will start a 5 second test for both sensonrs
-void doTest(int testDurationMs, int samplesPerSecond)
-{
+// A 5-second test will start for both sensors
+void doTest(int testDurationMs, int samplesPerSecond) {
   Serial.println("Iniciando toma de datos...");
+
+  // Metadata initialization
+  timeClient.update();
+    
+  // Get time from NTP
+  unsigned long epochTime = timeClient.getEpochTime();
+
+  // Convert time to date and time
+  setTime(epochTime);
+    
+  // Date and time formatting
+  date = String(day()) + "/" + String(month()) + "/" + String(year()); // DD/MM/YYYY
+  timeOfTest = String(hour()) + ":" + String(minute()) + ":" + String(second()); // HH:MM:SS
+
+  date = String(day() < 10 ? "0" : "") + String(day()) + "/" +
+       String(month() < 10 ? "0" : "") + String(month()) + "/" +
+       String(year());
+
+  timeOfTest = String(hour() < 10 ? "0" : "") + String(hour()) + ":" +
+               String(minute() < 10 ? "0" : "") + String(minute()) + ":" +
+               String(second() < 10 ? "0" : "") + String(second());
+
+  measurementsDoc["metadatos"]["evaluadoID"] = evaluatedID;
+  measurementsDoc["metadatos"]["tipoPrueba"] = typeOfTest;
+  measurementsDoc["metadatos"]["fecha"] = date;
+  measurementsDoc["metadatos"]["hora"] = timeOfTest;
+  measurementsDoc["metadatos"]["ubicacion"] = location;
 
   int totalSamples = (testDurationMs * samplesPerSecond) / 1000;
   int delayBetweenSamples = 1000 / samplesPerSecond;
 
+  // Test start time
   unsigned long startTime = millis();
-  for (int i = 0; i < totalSamples; i++)
-  {
+
+  for (int i = 0; i < totalSamples; i++) {
+
+    // Time at the beginning of each sampling
     unsigned long sampleStartTime = millis();
 
-    collectSensorData(mpu1, measurementsDoc1, measurementID1, "Sensor 1");
-    collectSensorData(mpu2, measurementsDoc2, measurementID2, "Sensor 2");
+    String sampleName = "muestra" + String(i + 1);
 
-    // Calcular el tiempo restante para mantener la frecuencia de muestreo
+    collectSensorData(mpu1, "sensor1", sampleName);
+    collectSensorData(mpu2, "sensor2", sampleName);
+
+    // Calculate the time remaining to maintain the sampling rate
     unsigned long elapsedTime = millis() - sampleStartTime;
-    if (elapsedTime < delayBetweenSamples)
-    {
+    if(elapsedTime < delayBetweenSamples) {
       delay(delayBetweenSamples - elapsedTime);
     }
   }
@@ -164,74 +194,58 @@ void doTest(int testDurationMs, int samplesPerSecond)
   unsigned long testDuration = millis() - startTime;
   Serial.printf("Toma de datos finalizada. Duración real: %lu ms\n", testDuration);
 
-  // Guardar y mostrar archivos JSON para cada sensor
-  saveJson("/sensor1_data.json", measurementsDoc1);
-  saveJson("/sensor2_data.json", measurementsDoc2);
-  showJson("/sensor1_data.json");
-  showJson("/sensor2_data.json");
+  // Save and display JSON files for each sensor
+  saveJson("/sensor_data.json", measurementsDoc);
+  showJson("/sensor_data.json");
 
-  // Enviar datos de ambos sensores como solicitudes POST separadas
-  Serial.println("Enviando datos del Sensor 1...");
-  sendJsonAsPostRequest("/sensor1_data.json");
-
-  Serial.println("Enviando datos del Sensor 2...");
-  sendJsonAsPostRequest("/sensor2_data.json");
-
+  // Send the JSON as a POST request
+  Serial.println("Enviando datos...");
+  sendJsonAsPostRequest("/sensor_data.json");
   Serial.println("Envío de datos completado.");
 }
 
-void handleMqttMessage(const String message)
-{
-  // Convertir el mensaje a minúsculas para una comparación insensible a mayúsculas/minúsculas
+void handleMqttMessage(const String message) {
+  // Convert the message to lowercase for case insensitive case comparison
   String lowerMessage = message;
   lowerMessage.toLowerCase();
 
-  if (lowerMessage == "init")
-  {
+  if (lowerMessage == "init") {
     Serial.println("Comando 'init' recibido. Iniciando test...");
-    // Llamar a doTest con los parámetros deseados (por ejemplo, 5 segundos a 20 Hz)
+    // Call doTest with the desired parameters (e.g. 5 seconds at 20 Hz)
     doTest(5000, 20);
   }
-  else
-  {
+  else {
     Serial.println("Comando no reconocido: " + message);
   }
 }
 
-void callback(char *topic, byte *payload, unsigned int length)
-{
-  // Crear un String con el payload recibido
+void callback(char *topic, byte *payload, unsigned int length) {
+  // Create a String with the received payload
   String message;
-  for (unsigned int i = 0; i < length; i++)
-  {
+  for (unsigned int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
 
-  // Imprimir el mensaje recibido
+  // Print the received message
   Serial.print("Mensaje recibido en el topic ");
   Serial.print(topic);
   Serial.print(": ");
   Serial.println(message);
 
-  // Llamar a handleMqttMessage con el mensaje recibido
+  // Call handleMqttMessage with the received message
   handleMqttMessage(message);
 }
 
-void keepAlive()
-{
-  if (!mqttClient.connected())
-  {
+void keepAlive() {
+  if (!mqttClient.connected()) {
     Serial.println("Reconectando");
-    // Intenta conectarse al servidor MQTT
-    while (!mqttClient.connected())
-    {
+    // Attempts to connect to the MQTT server
+    while (!mqttClient.connected()) {
       Serial.println("Intentando conectar al servidor MQTT...");
-      if (mqttClient.connect(clientName))
-      {
-        Serial.println("Conectado al servidor MQTT!");
+      if (mqttClient.connect(clientName)) {
+        Serial.println("¡Conectado al servidor MQTT!");
       }
-      else
-      {
+      else {
         Serial.print("Error al conectar: ");
         Serial.println(mqttClient.state());
         delay(5000);
@@ -243,86 +257,108 @@ void keepAlive()
 
 
 
-void setup()
-{
+void setup() {
   Serial.begin(115200);
 
-  // Inicializar el sistema de archivos SPIFFS
-  if (!SPIFFS.begin(true))
-  {
+  // Initialize the SPIFFS file system
+  if (!SPIFFS.begin(true)) {
     Serial.println("Error al montar SPIFFS");
     return;
   }
   Serial.println("SPIFFS montado correctamente");
 
-  // Inicializar los sensores MPU6050
+  // Initialize the MPU6050 sensors
   Wire.begin();
   mpu1.initialize();
   mpu2.initialize();
 
-  if (mpu1.testConnection())
-  {
+  if (mpu1.testConnection()) {
     Serial.println("Conexión exitosa con el MPU6050 1");
   }
-  else
-  {
+  else {
     Serial.println("Conexión fallida con el MPU6050 1");
     return;
   }
 
-  if (mpu2.testConnection())
-  {
+  if (mpu2.testConnection()) {
     Serial.println("Conexión exitosa con el MPU6050 2");
   }
-  else
-  {
+  else {
     Serial.println("Conexión fallida con el MPU6050 2");
     return;
   }
 
-  // Conecta a la red Wi-Fi
+  // Connect to Wi-Fi network
+  Serial.println("Conectando a la red Wi-Fi...");
+  WiFi.disconnect();
   WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED)
-  {
-    delay(500);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(5000);
     Serial.print(".");
   }
 
-  // Inicializa el cliente MQTT
+  // Initializes the MQTT client
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(callback);
 
-  // Intenta conectarse al servidor MQTT
-  while (!mqttClient.connected())
-  {
+  // Attempts to connect to the MQTT server
+  while (!mqttClient.connected()) {
     Serial.println("Intentando conectar al servidor MQTT...");
-    if (mqttClient.connect(clientName))
-    {
-      Serial.println("Conectado al servidor MQTT!");
+    if (mqttClient.connect(clientName)) {
+      Serial.println("¡Conectado al servidor MQTT!");
     }
-    else
-    {
+    else {
       Serial.print("Error al conectar: ");
       Serial.println(mqttClient.state());
       delay(5000);
     }
   }
 
-  // Suscríbete al topic
+  // Subscribe to the topic
   mqttClient.subscribe(topic);
+
+  // Initialize the NTP client
+  timeClient.begin();
+  // Synchronize time at startup
+  timeClient.update();
 
   Serial.println("Escribe 'init' para comenzar con la prueba");
 }
-// Función para guardar el archivo JSON en SPIFFS
 
-void loop()
-{
+void loop() {
 
   mqttClient.loop();
   keepAlive();
-  // Leer entrada del monitor serial
+
+  // Update NTP time
+  timeClient.update();
+
+  // Read input from serial monitor
+  if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    // Remove blank spaces around
+    input.trim();
+
+    if (input.equalsIgnoreCase("init")) {
+      Serial.println("Comando 'init' recibido. Iniciando prueba...");
+      // Request test type and location
+      Serial.println("Ingrese el tipo de prueba:");
+      while (!Serial.available());
+      typeOfTest = Serial.readStringUntil('\n');
+      typeOfTest.trim();
+
+      Serial.println("Ingrese la ubicación:");
+      while (!Serial.available());
+      location = Serial.readStringUntil('\n');
+      location.trim();
+      // Start the test
+      doTest(5000, 20);
+    } else {
+      Serial.println("Comando no reconocido: " + input);
+    }
+  }
 }
 
-void serialEvent()
-{
+void serialEvent() {
+  
 }
