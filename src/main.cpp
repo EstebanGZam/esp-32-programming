@@ -11,13 +11,13 @@
 #include <NTPClient.h>
 
 // URL used for http connection
-String url = "https://fakestoreapi.com/products";
+String url = "http://192.168.130.90:8080/hardware_controller/receive_data";
 
 // WiFi network configuration
 // Set network name
-const char *ssid = "PUBLICA";
+const char *ssid = "LABREDES";
 // Set network password
-const char *password = "";
+const char *password = "F0rmul4-1";
 
 // MQTT server configuration
 const char *mqttServer = "broker.hivemq.com";
@@ -49,7 +49,7 @@ MPU6050 mpu2;
 JsonDocument measurementsDoc;
 
 // Definition of metadata
-const char *evaluatedID = "1";
+String idString;
 String typeOfTest;
 String date;
 String timeOfTest;
@@ -84,6 +84,7 @@ void showJson(const char *path) {
     Serial.println(error.f_str());
     file.close();
     return;
+
   }
 
   Serial.println("Contenido del archivo JSON:");
@@ -101,7 +102,7 @@ void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampl
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, &gy, &gz);
 
-  JsonObject sample = measurementsDoc["datos"][sensorName].createNestedObject(sampleName);
+  JsonObject sample = measurementsDoc["data"][sensorName].createNestedObject(sampleName);
   sample["ax"] = ax;
   sample["ay"] = ay;
   sample["az"] = az;
@@ -151,7 +152,7 @@ void doTest(int testDurationMs, int samplesPerSecond) {
   setTime(epochTime);
     
   // Date and time formatting
-  date = String(day()) + "/" + String(month()) + "/" + String(year()); // DD/MM/YYYY
+  date = String(day()) + ":" + String(month()) + ":" + String(year()); // DD:MM:YYYY
   timeOfTest = String(hour()) + ":" + String(minute()) + ":" + String(second()); // HH:MM:SS
 
   date = String(day() < 10 ? "0" : "") + String(day()) + "/" +
@@ -162,11 +163,9 @@ void doTest(int testDurationMs, int samplesPerSecond) {
                String(minute() < 10 ? "0" : "") + String(minute()) + ":" +
                String(second() < 10 ? "0" : "") + String(second());
 
-  measurementsDoc["metadatos"]["evaluadoID"] = evaluatedID;
-  measurementsDoc["metadatos"]["tipoPrueba"] = typeOfTest;
-  measurementsDoc["metadatos"]["fecha"] = date;
-  measurementsDoc["metadatos"]["hora"] = timeOfTest;
-  measurementsDoc["metadatos"]["ubicacion"] = location;
+  measurementsDoc["metadata"]["evaluatedId"] = idString;
+  measurementsDoc["metadata"]["typeOfTest"] = typeOfTest;
+  measurementsDoc["metadata"]["dateAndTime"] = date + ":" + timeOfTest;
 
   int totalSamples = (testDurationMs * samplesPerSecond) / 1000;
   int delayBetweenSamples = 1000 / samplesPerSecond;
@@ -179,7 +178,7 @@ void doTest(int testDurationMs, int samplesPerSecond) {
     // Time at the beginning of each sampling
     unsigned long sampleStartTime = millis();
 
-    String sampleName = "muestra" + String(i + 1);
+    String sampleName = "sample" + String(i + 1);
 
     collectSensorData(mpu1, "sensor1", sampleName);
     collectSensorData(mpu2, "sensor2", sampleName);
@@ -204,20 +203,40 @@ void doTest(int testDurationMs, int samplesPerSecond) {
   Serial.println("Envío de datos completado.");
 }
 
-void handleMqttMessage(const String message) {
-  // Convert the message to lowercase for case insensitive case comparison
+void handleMqttMessage(const String &message) {
+  // Convert the message to lowercase for case-insensitive comparison
   String lowerMessage = message;
   lowerMessage.toLowerCase();
 
-  if (lowerMessage == "init") {
-    Serial.println("Comando 'init' recibido. Iniciando test...");
-    // Call doTest with the desired parameters (e.g. 5 seconds at 20 Hz)
-    doTest(5000, 20);
-  }
-  else {
-    Serial.println("Comando no reconocido: " + message);
+  // Check if the message starts with "init~~"
+  if (lowerMessage.startsWith("init~~")) {
+    Serial.println("Command 'init' received. Starting test...");
+
+    // Find the delimiters '~~'
+    int firstDelimiterIndex = lowerMessage.indexOf("~~");
+    int secondDelimiterIndex = lowerMessage.indexOf("~~", firstDelimiterIndex + 2);
+
+    // Check if delimiters are found
+    if (firstDelimiterIndex == -1 || secondDelimiterIndex == -1) {
+      Serial.println("Error: Invalid format of the message.");
+      return;
+    }
+
+    // Extract the evaluated ID
+    idString = lowerMessage.substring(firstDelimiterIndex + 2, secondDelimiterIndex);
+    
+    // Extract the type of test
+    typeOfTest = lowerMessage.substring(secondDelimiterIndex + 2);
+
+    // Call doTest with the parameters obtained (e.g., 5 seconds, 20 Hz)
+    doTest(1000, 5);
+  } else {
+    Serial.println("Unrecognized command: " + message);
   }
 }
+
+
+
 
 void callback(char *topic, byte *payload, unsigned int length) {
   // Create a String with the received payload
@@ -347,12 +366,8 @@ void loop() {
       typeOfTest = Serial.readStringUntil('\n');
       typeOfTest.trim();
 
-      Serial.println("Ingrese la ubicación:");
-      while (!Serial.available());
-      location = Serial.readStringUntil('\n');
-      location.trim();
       // Start the test
-      doTest(5000, 20);
+      doTest(1000, 5); //1 sec a 5 herrtz
     } else {
       Serial.println("Comando no reconocido: " + input);
     }
