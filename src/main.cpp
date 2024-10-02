@@ -55,6 +55,11 @@ String date;
 String timeOfTest;
 String location;
 
+// Led Pins
+
+const int ledPinG = 4;
+const int ledPinB = 5;
+
 void saveJson(const char *path, JsonDocument &jsonDoc){
   // Create or overwrite JSON file in SPIFFS
   File file = SPIFFS.open(path, FILE_WRITE);
@@ -142,7 +147,10 @@ void sendJsonAsPostRequest(const char *filename) {
 void doTest(int testDurationMs, int samplesPerSecond) {
   Serial.println("Iniciando toma de datos...");
 
-  // Metadata initialization
+  digitalWrite(ledPinG, HIGH);
+  digitalWrite(ledPinB,LOW);
+  
+   // Metadata initialization
   timeClient.update();
     
   // Get time from NTP
@@ -191,6 +199,10 @@ void doTest(int testDurationMs, int samplesPerSecond) {
   }
 
   unsigned long testDuration = millis() - startTime;
+
+  digitalWrite(ledPinG,LOW);
+  digitalWrite(ledPinB, HIGH);
+
   Serial.printf("Toma de datos finalizada. Duración real: %lu ms\n", testDuration);
 
   // Save and display JSON files for each sensor
@@ -279,6 +291,15 @@ void keepAlive() {
 void setup() {
   Serial.begin(115200);
 
+  // Setting up the led Pins
+  pinMode(ledPinG, OUTPUT);
+  pinMode(ledPinB, OUTPUT);
+
+  //Starting value: OFF
+
+  digitalWrite(ledPinG, LOW);
+  digitalWrite(ledPinB, LOW);
+
   // Initialize the SPIFFS file system
   if (!SPIFFS.begin(true)) {
     Serial.println("Error al montar SPIFFS");
@@ -349,6 +370,9 @@ void loop() {
   mqttClient.loop();
   keepAlive();
 
+  digitalWrite(ledPinB, HIGH);
+  digitalWrite(ledPinG, LOW);
+
   // Update NTP time
   timeClient.update();
 
@@ -360,6 +384,7 @@ void loop() {
 
     if (input.equalsIgnoreCase("init")) {
       Serial.println("Comando 'init' recibido. Iniciando prueba...");
+      digitalWrite(ledPinB, LOW);
       // Request test type and location
       Serial.println("Ingrese el tipo de prueba:");
       while (!Serial.available());
