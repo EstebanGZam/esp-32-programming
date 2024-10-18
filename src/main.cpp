@@ -106,7 +106,7 @@ void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampl
   int16_t gx, gy, gz;
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, &gy, &gz);
-
+  unsigned long unixTimeStamp = timeClient.getEpochTime();
   JsonObject sample = measurementsDoc["data"][sensorName].createNestedObject(sampleName);
   sample["ax"] = ax;
   sample["ay"] = ay;
@@ -114,6 +114,7 @@ void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampl
   sample["gx"] = gx;
   sample["gy"] = gy;
   sample["gz"] = gz;
+  sample["timestamp"] = unixTimeStamp;
 }
 
 void sendJsonAsPostRequest(const char *filename) {
