@@ -100,13 +100,12 @@ void showJson(const char *path) {
 }
 
 // Function to collect data from a specific sensor
-void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampleName) {
-  // Read sensor data MPU6050
+void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampleName, unsigned long startTime) {
   int16_t ax, ay, az;
   int16_t gx, gy, gz;
   mpu.getAcceleration(&ax, &ay, &az);
   mpu.getRotation(&gx, &gy, &gz);
-  unsigned long unixTimeStamp = timeClient.getEpochTime();
+  unsigned long relativeTimestamp = millis() - startTime;  // Calculate elapsed time since start
   JsonObject sample = measurementsDoc["data"][sensorName].createNestedObject(sampleName);
   sample["ax"] = ax;
   sample["ay"] = ay;
@@ -114,8 +113,9 @@ void collectSensorData(MPU6050 &mpu, const char *sensorName, const String &sampl
   sample["gx"] = gx;
   sample["gy"] = gy;
   sample["gz"] = gz;
-  sample["timestamp"] = unixTimeStamp;
+  sample["timestamp"] = relativeTimestamp;  // Use relative time as the timestamp
 }
+
 
 void sendJsonAsPostRequest(const char *filename) {
   File file = SPIFFS.open(filename, FILE_READ);
@@ -189,8 +189,8 @@ void doTest(int testDurationMs, int samplesPerSecond) {
 
     String sampleName = "sample" + String(i + 1);
 
-    collectSensorData(mpu1, "sensor1", sampleName);
-    collectSensorData(mpu2, "sensor2", sampleName);
+    collectSensorData(mpu1, "sensor1", sampleName,startTime);
+    collectSensorData(mpu2, "sensor2", sampleName,startTime);
 
     // Calculate the time remaining to maintain the sampling rate
     unsigned long elapsedTime = millis() - sampleStartTime;
