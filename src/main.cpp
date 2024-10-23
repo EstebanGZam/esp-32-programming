@@ -11,18 +11,18 @@
 #include <NTPClient.h>
 
 // URL used for http connection
-String url = "http://192.168.86.23:8080/hardware_controller/receive_data";
+String url = "http://192.168.130.50:8080/hardware_controller/receive_data";
 
 // WiFi network configuration
 // Set network name
-const char *ssid = "ABC";
+const char *ssid = "LABREDES";
 // Set network password
-const char *password = "abi11261119";
+const char *password = "F0rmul4-1";
 
 // MQTT server configuration
 const char *mqttServer = "broker.hivemq.com";
 const int mqttPort = 1883;
-const char *clientName = "ESP32ClienteMicasaA00381213";
+const char *clientName = "ESP32ClienteMicasaA00395902";
 
 // Topic configuration
 const char *topic = "test/icesi/dlp";
@@ -262,37 +262,35 @@ void handleMqttMessage(const String &message) {
   }
 }
 
-
-
-
-void callback(char *topic, byte *payload, unsigned int length) {
-  // Create a String with the received payload
-  String message;
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
+bool checkSensors(){
+  bool controlFlag1 = false;
+  bool controlFlag2 = false;
+  if (mpu1.testConnection()) {
+    Serial.println("Conexión exitosa con el MPU6050 1");
+    controlFlag1 = true;
+  }
+  else {
+    Serial.println("Conexión fallida con el MPU6050 1");
   }
 
-  // Print the received message
-  Serial.print("Mensaje recibido en el topic ");
-  Serial.print(topic);
-  Serial.print(": ");
-  Serial.println(message);
-
-  // Call handleMqttMessage with the received message
-  
-
-  if (String(topic) == "test/icesi/dlp/check"){
-    handleStatusCheck();
-  }else{
-    handleMqttMessage(message);
+  if (mpu2.testConnection()) {
+    Serial.println("Conexión exitosa con el MPU6050 2");
+    controlFlag2 = true;
   }
+  else {
+    Serial.println("Conexión fallida con el MPU6050 2");
+  }
+  return controlFlag1 && controlFlag2;
 }
+
 void handleStatusCheck(){
-  String responseTopic = "test/icesi/dlp/check_response";
+  String responseTopic = "test/icesi/dlp";
 
   bool sensorsConnected = checkSensors();
 
   bool mqttConnected = mqttClient.connected();
+  Serial.println(sensorsConnected);
+  Serial.println(mqttConnected);
 
   if (sensorsConnected && mqttConnected) {
     // Todo está bien, publicar respuesta "ok"
@@ -314,25 +312,27 @@ void handleStatusCheck(){
 }
 
 
-bool checkSensors(){
-  bool controlFlag1 = false;
-  bool controlFlag2 = false;
-  if (mpu1.testConnection()) {
-    Serial.println("Conexión exitosa con el MPU6050 1");
-    controlFlag1 = true;
-  }
-  else {
-    Serial.println("Conexión fallida con el MPU6050 1");
+void callback(char *topic, byte *payload, unsigned int length) {
+  // Create a String with the received payload
+  String message;
+  for (unsigned int i = 0; i < length; i++) {
+    message += (char)payload[i];
   }
 
-  if (mpu2.testConnection()) {
-    Serial.println("Conexión exitosa con el MPU6050 2");
-    bool controlFlag2 = true;
+  // Print the received message
+  Serial.print("Mensaje recibido en el topic ");
+  Serial.print(topic);
+  Serial.print(": ");
+  Serial.println(message);
+
+  // Call handleMqttMessage with the received message
+  
+
+  if (message == "check_error"){
+    handleStatusCheck();
+  }else {
+    handleMqttMessage(message);
   }
-  else {
-    Serial.println("Conexión fallida con el MPU6050 2");
-  }
-  return controlFlag1 && controlFlag2;
 }
 
 
