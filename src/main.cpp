@@ -11,18 +11,18 @@
 #include <NTPClient.h>
 
 // URL used for http connection
-String url = "http://192.168.130.90:8080/hardware_controller/receive_data";
+String url = "http://192.168.86.23:8080/hardware_controller/receive_data";
 
 // WiFi network configuration
 // Set network name
-const char *ssid = "LABREDES";
+const char *ssid = "ABC";
 // Set network password
-const char *password = "F0rmul4-1";
+const char *password = "abi11261119";
 
 // MQTT server configuration
 const char *mqttServer = "broker.hivemq.com";
 const int mqttPort = 1883;
-const char *clientName = "ESP32ClienteIcesiA00381213";
+const char *clientName = "ESP32ClienteMicasaA00381213";
 
 // Topic configuration
 const char *topic = "test/icesi/dlp";
@@ -61,6 +61,7 @@ String location;
 
 const int ledPinG = 4;
 const int ledPinB = 5;
+
 
 void saveJson(const char *path, JsonDocument &jsonDoc){
   // Create or overwrite JSON file in SPIFFS
@@ -242,7 +243,7 @@ void handleMqttMessage(const String &message) {
 
     // Check if delimiters are found
     if (firstDelimiterIndex == -1 || secondDelimiterIndex == -1) {
-      Serial.println("Error: Invalid format of the message.");
+      Serial.println("Error: Invalid format of the message.");\
       return;
     }
 
@@ -278,8 +279,62 @@ void callback(char *topic, byte *payload, unsigned int length) {
   Serial.println(message);
 
   // Call handleMqttMessage with the received message
-  handleMqttMessage(message);
+  
+
+  if (String(topic) == "test/icesi/dlp/check"){
+    handleStatusCheck();
+  }else{
+    handleMqttMessage(message);
+  }
 }
+void handleStatusCheck(){
+  String responseTopic = "test/icesi/dlp/check_response";
+
+  bool sensorsConnected = checkSensors();
+
+  bool mqttConnected = mqttClient.connected();
+
+  if (sensorsConnected && mqttConnected) {
+    // Todo está bien, publicar respuesta "ok"
+    String payload = "{\"status\": \"ok\"}";
+    mqttClient.publish(responseTopic.c_str(), payload.c_str());
+    Serial.println("Respuesta de estado: OK");
+  } else {
+    // Si hay un error, publicar el error correspondiente
+    String errorMessage = "";
+    if (!sensorsConnected) {
+      errorMessage = "Error: Sensor desconectado";
+    } else if (!mqttConnected) {
+      errorMessage = "Error: Desconexión del servidor MQTT";
+    }
+    String payload = "{\"status\": \"error\", \"message\": \"" + errorMessage + "\"}";
+    mqttClient.publish(responseTopic.c_str(), payload.c_str());
+    Serial.println("Respuesta de estado con error: " + errorMessage);
+  }
+}
+
+
+bool checkSensors(){
+  bool controlFlag1 = false;
+  bool controlFlag2 = false;
+  if (mpu1.testConnection()) {
+    Serial.println("Conexión exitosa con el MPU6050 1");
+    controlFlag1 = true;
+  }
+  else {
+    Serial.println("Conexión fallida con el MPU6050 1");
+  }
+
+  if (mpu2.testConnection()) {
+    Serial.println("Conexión exitosa con el MPU6050 2");
+    bool controlFlag2 = true;
+  }
+  else {
+    Serial.println("Conexión fallida con el MPU6050 2");
+  }
+  return controlFlag1 && controlFlag2;
+}
+
 
 void keepAlive() {
   if (!mqttClient.connected()) {
@@ -312,7 +367,7 @@ void setup() {
   //Starting value: OFF
 
   digitalWrite(ledPinG, LOW);
-  digitalWrite(ledPinB, LOW);
+  digitalWrite(ledPinB, HIGH);
 
   // Initialize the SPIFFS file system
   if (!SPIFFS.begin(true)) {
@@ -324,7 +379,7 @@ void setup() {
   // Initialize the MPU6050 sensors
   Wire.begin();
   mpu1.initialize();
-  mpu2.initialize();
+  //mpu2.initialize();
 
   if (mpu1.testConnection()) {
     Serial.println("Conexión exitosa con el MPU6050 1");
