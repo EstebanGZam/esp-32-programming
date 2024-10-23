@@ -27,6 +27,8 @@ const char *clientName = "ESP32ClienteIcesiA00381213";
 // Topic configuration
 const char *topic = "test/icesi/dlp";
 
+bool testRunning = false;
+
 // Time configuration
 WiFiUDP ntpUDP;
 
@@ -182,7 +184,7 @@ void doTest(int testDurationMs, int samplesPerSecond) {
   // Test start time
   unsigned long startTime = millis();
 
-  for (int i = 0; i < totalSamples; i++) {
+  for (int i = 0; i < totalSamples && testRunning; i++) {
 
     // Time at the beginning of each sampling
     unsigned long sampleStartTime = millis();
@@ -204,22 +206,31 @@ void doTest(int testDurationMs, int samplesPerSecond) {
   digitalWrite(ledPinG,LOW);
   digitalWrite(ledPinB, HIGH);
 
-  Serial.printf("Toma de datos finalizada. Duración real: %lu ms\n", testDuration);
-
-  // Save and display JSON files for each sensor
-  saveJson("/sensor_data.json", measurementsDoc);
-  showJson("/sensor_data.json");
-
-  // Send the JSON as a POST request
-  Serial.println("Enviando datos...");
-  sendJsonAsPostRequest("/sensor_data.json");
-  Serial.println("Envío de datos completado.");
+  if (testRunning) {
+    Serial.printf("Toma de datos finalizada. Duración real: %lu ms\n", testDuration);
+    // Save and display JSON files for each sensor
+    saveJson("/sensor_data.json", measurementsDoc);
+    showJson("/sensor_data.json");
+    // Send the JSON as a POST request
+    Serial.println("Enviando datos...");
+    sendJsonAsPostRequest("/sensor_data.json");
+    Serial.println("Envío de datos completado.");
+  } else {
+    Serial.println("Prueba detenida antes de completarse.");
+  }
+  
 }
 
 void handleMqttMessage(const String &message) {
   // Convert the message to lowercase for case-insensitive comparison
   String lowerMessage = message;
   lowerMessage.toLowerCase();
+
+  if (lowerMessage.equalsIgnoreCase("stop")) {
+    Serial.println("Comando 'stop' recibido. Deteniendo prueba...");
+    testRunning = false;
+    return;
+  }
 
   // Check if the message starts with "init~~"
   if (lowerMessage.startsWith("init~~")) {
@@ -240,6 +251,8 @@ void handleMqttMessage(const String &message) {
     
     // Extract the type of test
     typeOfTest = lowerMessage.substring(secondDelimiterIndex + 2);
+
+    testRunning = true;
 
     // Call doTest with the parameters obtained (e.g., 5 seconds, 20 Hz)
     doTest(1000, 5);
@@ -399,6 +412,7 @@ void loop() {
     }
   }
 }
+
 
 void serialEvent() {
   
