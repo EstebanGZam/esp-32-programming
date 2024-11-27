@@ -183,20 +183,23 @@ void sendJsonAsPostRequest(const char *filename)
   String jsonContent = file.readString();
   file.close();
 
+  Serial.println(url);
+  Serial.println(jsonContent);
+
   // Prepare and send the POST request
-  http.begin(url.c_str());
+  http.begin(url);
   http.addHeader("Content-Type", "application/json");
-  int httpResponseCode = http.POST(jsonContent.c_str());
+  int httpResponseCode = http.POST(jsonContent);
 
   if (httpResponseCode > 0)
   {
-    Serial.printf("HTTP Response code: %d\n", httpResponseCode);
+    Serial.printf("Código de respuesta HTTP: %d\n", httpResponseCode);
     String payload = http.getString();
     Serial.println(payload);
   }
   else
   {
-    Serial.printf("Error code: %d\n", httpResponseCode);
+    Serial.printf("Código de error: %d\n", httpResponseCode);
   }
 
   http.end();
@@ -469,6 +472,9 @@ void setup()
     Serial.print(".");
   }
   Serial.println("\nConexión exitosa a la red Wi-Fi");
+  // Get the assigned IP address
+  Serial.print("Dirección IP asignada: ");
+  Serial.println(WiFi.localIP());
 
   // Initializes the MQTT client
   mqttClient.setServer(mqttServer, mqttPort);
@@ -524,12 +530,12 @@ void loop()
     {
       Serial.println("Comando 'init' recibido. Iniciando prueba con parámetros predeterminados...");
 
-      // Construir mensaje con datos de prueba
-      String id = "test123";          // ID de prueba quemado
-      String testType = "basic_test"; // Tipo de prueba quemado
+      // Construct message with test data
+      String id = "1111111111";                                   // Test ID
+      String testType = (random(2) == 0) ? "Zapateo" : "Taconeo"; // Type of test
       String message = "init~~" + id + "~~" + testType;
 
-      // Llamar a la función de manejo de pruebas con el mensaje predefinido
+      // Call the test handling function with the predefined message
       handleMessageToDoTest(message);
     }
     else
